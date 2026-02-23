@@ -5,32 +5,75 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Aussie Meme Boss Rush: VR Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #020205; font-family: monospace; color: #0ff; }
+        #debug-console { 
+            position: absolute; top: 10px; left: 10px; width: calc(100% - 20px); height: 100px; 
+            background: rgba(0,0,0,0.8); font-size: 10px; overflow-y: auto; pointer-events: none; 
+            z-index: 1000; border: 1px solid #0ff; display: block;
+        }
+        #error-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(20,0,0,0.9); display: none; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 2000; padding: 20px; text-align: center;
+        }
+        #loading-msg {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 20px; z-index: 500;
+        }
     </style>
 </head>
 <body>
-<script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.skypack.dev/three@0.149.0",
-            "three/examples/jsm/webxr/VRButton.js": "https://cdn.skypack.dev/three@0.149.0/examples/jsm/webxr/VRButton.js"
-        }
-    }
-</script>
-<script type="module">
-    import * as THREE from 'three';
-    import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
+    <div id="debug-console">DEBUG LOG START...<br></div>
+    <div id="error-overlay">
+        <h1>CRITICAL ERROR</h1>
+        <div id="error-text"></div>
+        <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; background:#0ff; border:none; cursor:pointer;">RELOAD</button>
+    </div>
+    <div id="loading-msg">INITIALIZING SYSTEM...</div>
 
-    let width = window.innerWidth, height = window.innerHeight;
+<script>
+    const debugConsole = document.getElementById('debug-console');
+    const errorOverlay = document.getElementById('error-overlay');
+    const errorText = document.getElementById('error-text');
+    const loadingMsg = document.getElementById('loading-msg');
+
+    function log(msg) {
+        console.log(msg);
+        debugConsole.innerHTML += `> ${msg}<br>`;
+        debugConsole.scrollTop = debugConsole.scrollHeight;
+    }
+
+    window.onerror = function(msg, url, line) {
+        const err = `${msg} at ${url}:${line}`;
+        log(`ERROR: ${err}`);
+        errorOverlay.style.display = 'flex';
+        errorText.innerText = err;
+        loadingMsg.style.display = 'none';
+    };
+
+    log("Page loaded. Checking browser features...");
+    log(`WebXR: ${!!navigator.xr}`);
+    log(`Secure Context: ${window.isSecureContext}`);
+</script>
+
+<script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.149.0/build/three.module.js';
+    import { VRButton } from 'https://unpkg.com/three@0.149.0/examples/jsm/webxr/VRButton.js';
+
+    log("Three.js modules imported.");
+
+    const width = window.innerWidth, height = window.innerHeight;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x020205);
     scene.fog = new THREE.Fog(0x020205, 10, 100);
+    log("Scene and Fog created.");
 
     const camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 1000);
     const cameraRig = new THREE.Group();
     cameraRig.position.set(0, 1.6, 0);
     cameraRig.add(camera);
     scene.add(cameraRig);
+    log("Camera and Rig added at y=1.6.");
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -38,16 +81,25 @@
     renderer.xr.enabled = true;
     renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
-    document.body.appendChild(VRButton.createButton(renderer));
+    
+    try {
+        const vrBtn = VRButton.createButton(renderer);
+        document.body.appendChild(vrBtn);
+        log("VRButton created.");
+    } catch(e) {
+        log("VRButton failed to initialize.");
+    }
 
     // Lights
     const amb = new THREE.AmbientLight(0x404040, 0.5); scene.add(amb);
     const sun = new THREE.DirectionalLight(0xffffff, 1); sun.position.set(10, 20, 10); sun.castShadow = true; scene.add(sun);
     const bossSpot = new THREE.SpotLight(0xffffff, 3); bossSpot.position.set(0, 20, -5); bossSpot.castShadow = true; scene.add(bossSpot);
+    log("Lights added.");
 
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x111111 }));
     ground.rotation.x = -Math.PI/2; ground.position.y = 0; ground.receiveShadow = true; scene.add(ground);
     scene.add(new THREE.GridHelper(200, 40, 0x00ffff, 0x222222));
+    log("Ground and Grid added.");
 
     // Game State
     let state = 'title', level = 0, pHP = 100, score = 0, mult = 1, boss = null, eHP = 0, eMax = 1, timeScale = 1, phase = 1;
@@ -183,12 +235,6 @@
         return applyShadows(g);
     }
 
-    function mkForest() { for(let i=0; i<40; i++) { const tree = new THREE.Group(); tree.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.0, 0.2), new THREE.MeshStandardMaterial({color:0x442211}))); const f = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.5, 6), new THREE.MeshStandardMaterial({color:0x114411})); f.position.y = 1.0; tree.add(f); tree.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(tree); env.push(applyShadows(tree)); } }
-    function mkDesert() { for(let i=0; i<30; i++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5 + Math.random()*1.0, 0), new THREE.MeshStandardMaterial({color:0x884422})); r.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); r.rotation.set(Math.random(), Math.random(), Math.random()); scene.add(r); env.push(applyShadows(r)); } }
-    function mkSuburbs() { for(let i=0; i<15; i++) { const h = new THREE.Group(); h.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.2, 1.5), new THREE.MeshStandardMaterial({color:0xeeeeee}))); const r = new THREE.Mesh(new THREE.ConeGeometry(1.2, 0.8, 4), new THREE.MeshStandardMaterial({color:0xaa2222})); r.position.y = 1.0; h.add(r); h.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(h); env.push(applyShadows(h)); } }
-    function mkShed() { for(let i=0; i<10; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 0.2), new THREE.MeshStandardMaterial({color:0x333333})); b.position.set(0, 3, -5 - i*2); scene.add(b); env.push(applyShadows(b)); } }
-    function mkOutback() { mkDesert(); for(let i=0; i<15; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1), new THREE.MeshStandardMaterial({color:0x332211})); f.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(f); env.push(applyShadows(f)); } }
-
     const LVLS = [
         { n: "DROP BEAR", hp: 1000, create: mkDropBear, mkEnv: mkForest, bg: 0x050a05, story: "MISSION 1: THE HANGING TERROR\nDeep in the neon forest, a predator waits.\nStay alert. They come from above." },
         { n: "CYBER EMU", hp: 1500, create: mkEmu, mkEnv: mkDesert, bg: 0x0a0500, story: "MISSION 2: SPEED DEMON\nThe Great Emu War has evolved.\nFaster. Stronger. More feathers." },
@@ -196,6 +242,12 @@
         { n: "CYBER HUNTSMAN", hp: 2500, create: mkSpider, mkEnv: mkShed, bg: 0x0a000a, story: "MISSION 4: EIGHT-LEGGED FURY\nCaught in a web of lies and lasers.\nDon't let it get close." },
         { n: "K-9000 ROO", hp: 4000, create: mkKangaroo, mkEnv: mkOutback, bg: 0x0a0a00, story: "FINAL MISSION: THE BIG RED\nThe ultimate boxing champion.\nThis is for the championship belt." }
     ];
+
+    function mkForest() { for(let i=0; i<40; i++) { const tree = new THREE.Group(); tree.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.0, 0.2), new THREE.MeshStandardMaterial({color:0x442211}))); const f = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.5, 6), new THREE.MeshStandardMaterial({color:0x114411})); f.position.y = 1.0; tree.add(f); tree.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(tree); env.push(applyShadows(tree)); } }
+    function mkDesert() { for(let i=0; i<30; i++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5 + Math.random()*1.0, 0), new THREE.MeshStandardMaterial({color:0x884422})); r.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); r.rotation.set(Math.random(), Math.random(), Math.random()); scene.add(r); env.push(applyShadows(r)); } }
+    function mkSuburbs() { for(let i=0; i<15; i++) { const h = new THREE.Group(); h.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.2, 1.5), new THREE.MeshStandardMaterial({color:0xeeeeee}))); const r = new THREE.Mesh(new THREE.ConeGeometry(1.2, 0.8, 4), new THREE.MeshStandardMaterial({color:0xaa2222})); r.position.y = 1.0; h.add(r); h.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(h); env.push(applyShadows(h)); } }
+    function mkShed() { for(let i=0; i<10; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 0.2), new THREE.MeshStandardMaterial({color:0x333333})); b.position.set(0, 3, -5 - i*2); scene.add(b); env.push(applyShadows(b)); } }
+    function mkOutback() { mkDesert(); for(let i=0; i<15; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1), new THREE.MeshStandardMaterial({color:0x332211})); f.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(f); env.push(applyShadows(f)); } }
 
     // HUD
     const hudCanvas = document.createElement('canvas');
@@ -556,7 +608,19 @@
         renderer.render(scene, camera);
     }
 
+    log("Initializing animation loop...");
+    loadingMsg.style.display = 'none';
     renderer.setAnimationLoop(update);
+    log("Animation loop started.");
+
+    // Simple Test
+    setTimeout(() => {
+        if (renderer.info.render.calls > 0) {
+            log("TEST PASSED: Renderer is active.");
+        } else {
+            log("TEST FAILED: Renderer is not drawing.");
+        }
+    }, 1000);
 </script>
 </body>
 </html>
