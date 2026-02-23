@@ -353,6 +353,7 @@
     const raycaster = new THREE.Raycaster();
     const tempMatrix = new THREE.Matrix4();
     const controllers = [];
+    const controllerGrips = [];
 
     function onSelectStart(event) {
         initAudio();
@@ -367,9 +368,16 @@
             else { startGame(); }
         }
         else if(state === 'leaderboard') state = 'title';
-        else if(state === 'story' || state === 'scroller') {
-            if(state === 'scroller' && scrollerCallback) scrollerCallback();
-            else startLevel();
+        else if(state === 'story') {
+            // Wait for timers or allow skip? Let's just start if they click
+            startLevel(); 
+        }
+        else if(state === 'scroller') {
+            if(scrollerCallback) {
+                const cb = scrollerCallback;
+                scrollerCallback = null; // Prevent double call
+                cb();
+            }
         }
         else if(state === 'input') {
             if (playerName.length < 3) playerName += KB_CHARS[Math.floor(Math.random()*KB_CHARS.length)];
@@ -394,20 +402,33 @@
         scene.add(controller);
         controllers.push(controller);
 
-        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]), new THREE.LineBasicMaterial({color: 0x00ffff, transparent: true, opacity: 0.5}));
+        // Visual "Hand/Gun"
+        const handG = new THREE.BoxGeometry(0.05, 0.05, 0.2);
+        const handM = new THREE.MeshStandardMaterial({color: 0x222222, metalness: 0.8, roughness: 0.2});
+        const hand = new THREE.Mesh(handG, handM);
+        hand.position.z = -0.05;
+        controller.add(hand);
+
+        // Muzzle flash point
+        const muzzle = new THREE.Group();
+        muzzle.position.z = -0.15;
+        controller.add(muzzle);
+        controller.muzzle = muzzle;
+
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]), new THREE.LineBasicMaterial({color: 0x00ffff, transparent: true, opacity: 0.3}));
         line.scale.z = 10;
         controller.add(line);
     }
 
     // Shield
-    const shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2, side: THREE.BackSide }));
+    const shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.15, side: THREE.BackSide }));
     shieldMesh.visible = false;
     cameraRig.add(shieldMesh);
 
     function activateShield() {
         if(ctrl.cd <= 0 && !ctrl.active) {
             ctrl.active = true;
-            ctrl.activeTimer = 120;
+            ctrl.activeTimer = 60; // 1 second in 60fps
             shieldMesh.visible = true;
             playSfx(200, 'sine', 0.2, 0.1);
         }
@@ -415,8 +436,15 @@
 
     function fire(controller) {
         playShootSound();
+        
+        // Haptic feedback if available
+        if (controller.inputSource && controller.inputSource.gamepad && controller.inputSource.gamepad.hapticActuators) {
+            const actuator = controller.inputSource.gamepad.hapticActuators[0];
+            if (actuator) actuator.pulse(0.5, 50);
+        }
+
         tempMatrix.identity().extractRotation(controller.matrixWorld);
-        raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+        raycaster.ray.origin.setFromMatrixPosition(controller.muzzle.matrixWorld);
         raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
         const targets = [];
@@ -459,10 +487,11 @@
             mult = 1;
         }
 
-        const beamG = new THREE.CylinderGeometry(0.01, 0.01, raycaster.ray.origin.distanceTo(point), 4);
-        const beamM = new THREE.MeshBasicMaterial({color: ctrl.w === 'h' ? 0x00ffff : 0x00ff00, transparent: true, opacity: 0.4});
+        const start = new THREE.Vector3(); controller.muzzle.getWorldPosition(start);
+        const beamG = new THREE.CylinderGeometry(0.005, 0.005, start.distanceTo(point), 4);
+        const beamM = new THREE.MeshBasicMaterial({color: ctrl.w === 'h' ? 0x00ffff : 0x00ff00, transparent: true, opacity: 0.6});
         const beam = new THREE.Mesh(beamG, beamM);
-        beam.position.copy(raycaster.ray.origin.clone().lerp(point, 0.5));
+        beam.position.copy(start.clone().lerp(point, 0.5));
         beam.lookAt(point); beam.rotateX(Math.PI/2);
         scene.add(beam);
         setTimeout(() => scene.remove(beam), 50);
@@ -470,9 +499,9 @@
 
     function spawnP(pos, n, col) {
         for(let i=0; i<n; i++) {
-            const m = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,0.05), new THREE.MeshBasicMaterial({ color: col }));
+            const m = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.02), new THREE.MeshBasicMaterial({ color: col }));
             m.position.copy(pos); scene.add(m);
-            particles.push({ m, v: new THREE.Vector3((Math.random()-0.5)*0.2, (Math.random()-0.5)*0.2, (Math.random()-0.5)*0.2), life: 20 });
+            particles.push({ m, v: new THREE.Vector3((Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1), life: 20 });
         }
     }
 
@@ -481,12 +510,14 @@
     }
 
     function startGame() { 
+        if(state === 'scroller' || state === 'story') return; // Prevent double start
         level = 0; pHP = 100; score = 0; mult = 1; initAudio();
         const introText = "A long time ago in an Outback far, far away...\n\nTHE NEON REBELLION\n\nThe Great Emu War has moved into the digital realm.\n\nAs the last Cyber-Operator, you must delete the Big Five before they upload 'Bogans.exe'.\n\nYour journey begins in the Neon Forest...";
         showScroller(introText, startLevel);
     }
 
     function startLevel() {
+        if(state === 'intro' || state === 'playing') return;
         phase = 1;
         if(boss) scene.remove(boss); entities.forEach(e=>scene.remove(e.mesh)); entities=[]; env.forEach(e=>scene.remove(e)); env=[]; particles.forEach(p=>scene.remove(p.m)); particles=[]; ragdolls.forEach(r=>scene.remove(r.mesh)); ragdolls=[];
         const l = LVLS[level]; eHP = l.hp; eMax = eHP; boss = l.create(); boss.position.set(0, 1.5, -8); scene.add(boss);
@@ -502,6 +533,13 @@
         const now = Date.now();
         const t = now * 0.001;
         activeUniforms.forEach(u => { if(u.uTime) u.uTime.value = t; });
+
+        // Update HUD position based on state
+        if (state === 'playing') {
+            hudMesh.position.set(0, 0.45, -1); // Keep it slightly up and forward in gameplay
+        } else {
+            hudMesh.position.set(0, 0.05, -1); // Lower it to centre of view for menus/scenes
+        }
 
         if(state === 'playing') {
             if(boss) {
