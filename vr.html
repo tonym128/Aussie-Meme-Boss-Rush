@@ -361,6 +361,7 @@
             if(p.life <= 0) { scene.remove(p.m); particles.splice(i,1); }
         }
         updateHUD();
+        renderer.render(scene, camera);
     }
 
     renderer.setAnimationLoop(update);
