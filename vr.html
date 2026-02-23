@@ -132,12 +132,18 @@
         return applyShadows(g);
     }
 
+    function mkForest() { for(let i=0; i<40; i++) { const tree = new THREE.Group(); tree.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.0, 0.2), new THREE.MeshStandardMaterial({color:0x442211}))); const f = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.5, 6), new THREE.MeshStandardMaterial({color:0x114411})); f.position.y = 1.0; tree.add(f); tree.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(tree); env.push(applyShadows(tree)); } }
+    function mkDesert() { for(let i=0; i<30; i++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5 + Math.random()*1.0, 0), new THREE.MeshStandardMaterial({color:0x884422})); r.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); r.rotation.set(Math.random(), Math.random(), Math.random()); scene.add(r); env.push(applyShadows(r)); } }
+    function mkSuburbs() { for(let i=0; i<15; i++) { const h = new THREE.Group(); h.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.2, 1.5), new THREE.MeshStandardMaterial({color:0xeeeeee}))); const r = new THREE.Mesh(new THREE.ConeGeometry(1.2, 0.8, 4), new THREE.MeshStandardMaterial({color:0xaa2222})); r.position.y = 1.0; h.add(r); h.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(h); env.push(applyShadows(h)); } }
+    function mkShed() { for(let i=0; i<10; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 0.2), new THREE.MeshStandardMaterial({color:0x333333})); b.position.set(0, 3, -5 - i*2); scene.add(b); env.push(applyShadows(b)); } }
+    function mkOutback() { mkDesert(); for(let i=0; i<15; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1), new THREE.MeshStandardMaterial({color:0x332211})); f.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(f); env.push(applyShadows(f)); } }
+
     const LVLS = [
-        { n: "DROP BEAR", hp: 1000, create: mkDropBear, bg: 0x050a05 },
-        { n: "CYBER EMU", hp: 1500, create: mkEmu, bg: 0x0a0500 },
-        { n: "MAGPIE DRONE", hp: 2000, create: mkMagpie, bg: 0x05050a },
-        { n: "CYBER HUNTSMAN", hp: 2500, create: mkSpider, bg: 0x0a000a },
-        { n: "K-9000 ROO", hp: 4000, create: mkKangaroo, bg: 0x0a0a00 }
+        { n: "DROP BEAR", hp: 1000, create: mkDropBear, mkEnv: mkForest, bg: 0x050a05 },
+        { n: "CYBER EMU", hp: 1500, create: mkEmu, mkEnv: mkDesert, bg: 0x0a0500 },
+        { n: "MAGPIE DRONE", hp: 2000, create: mkMagpie, mkEnv: mkSuburbs, bg: 0x05050a },
+        { n: "CYBER HUNTSMAN", hp: 2500, create: mkSpider, mkEnv: mkShed, bg: 0x0a000a },
+        { n: "K-9000 ROO", hp: 4000, create: mkKangaroo, mkEnv: mkOutback, bg: 0x0a0a00 }
     ];
 
     // VR Controllers
@@ -291,12 +297,18 @@
 
     function startGame() { level = 0; pHP = 100; score = 0; startLevel(); initAudio(); }
     function startLevel() {
-        state = 'playing'; eHP = LVLS[level].hp; eMax = eHP; phase = 1;
+        state = 'playing'; const l = LVLS[level]; eHP = l.hp; eMax = eHP; phase = 1;
         if(boss) scene.remove(boss);
-        boss = LVLS[level].create();
+        entities.forEach(e=>scene.remove(e.mesh)); entities=[];
+        env.forEach(e=>scene.remove(e)); env=[];
+        particles.forEach(p=>scene.remove(p.m)); particles=[];
+        
+        boss = l.create();
         boss.position.set(0, 1.5, -8);
         scene.add(boss);
-        scene.background = new THREE.Color(LVLS[level].bg);
+        l.mkEnv();
+        scene.background = new THREE.Color(l.bg);
+        scene.fog.color = new THREE.Color(l.bg);
     }
 
     function update() {
