@@ -20,16 +20,17 @@ In the year 20XX, the Great Emu War has escalated into a digital nightmare. The 
 
 ## 🛠 Technical Implementation
 - **Graphics:** `Three.js` (WebGL) with a custom procedural shader system.
+- **Audio:** Custom procedural sound engine using Web Audio API. Generates real-time synth basslines and FM-style sound effects without external assets.
 - **Materials:** Bosses use procedural "Noise" chunks (Snoise) for fur, scales, and tech-vein effects without external textures.
-- **Targeting:** Uses screen-space projection (`Vector3.project(camera)`) to allow intuitive "tap-to-hit" mechanics that feel natural on mobile.
+- **Targeting:** Pure 2D screen-space hit detection. Entities and boss parts are projected to UI coordinates for pixel-perfect tap/click accuracy.
 - **Physics:** Custom ragdoll simulation triggered on boss death—pieces fall, bounce off the ground plane, and flail in slow motion before exploding into confetti.
-- **Responsive Design:** Dynamic scaling for UI and keyboard input to support Portrait and Landscape orientations.
+- **Responsive Design:** Dynamic viewport scaling (`--vh`) and adaptive UI layouts to support Portrait and Landscape orientations across all devices.
 
 ## 👾 The Bosses
 1. **Drop Bear:** The hanging terror of the neon forest.
 2. **Cyber Emu:** A speed demon from the Great War.
 3. **Magpie Drone:** Swoop season in the digital suburbs.
-4. **Widow Maker:** Eight-legged fury in the neon shed.
+4. **Cyber Huntsman:** Eight-legged fury in the neon shed.
 5. **K-9000 Roo:** The ultimate boxing champion of the Outback.
 
 ## 📜 Editing Guidelines
@@ -40,7 +41,6 @@ In the year 20XX, the Great Emu War has escalated into a digital nightmare. The 
 - **Responsiveness:** Always test UI overlaps in narrow portrait modes. The Shield Indicator and Multiplier should never collide.
 
 ## 🚀 Future Ideas
-- **Audio:** Retro-synthwave soundtrack and crunchy 8-bit sound effects.
 - **Boss Phase 2:** Mid-fight transformations and armor plating.
 - **Global Leaderboard:** Replace LocalStorage with a lightweight backend for cross-device competition.
 - **Shop:** Spend score between missions on shield duration or projectile speed.
