@@ -785,13 +785,22 @@
     document.getElementById('fs-toggle').addEventListener('click', toggleFullscreen);
     document.getElementById('fs-toggle').addEventListener('touchstart', (e) => { e.preventDefault(); toggleFullscreen(); });
 
-    function initInteraction() {
+    async function initInteraction() {
         const m=document.getElementById('screen-msg');
         m.style.display='flex';
+        
+        let vrSupported = false;
+        if (navigator.xr) {
+            try {
+                vrSupported = await navigator.xr.isSessionSupported('immersive-vr');
+            } catch(e) { vrSupported = false; }
+        }
+
         m.innerHTML=`<h1 style="color:#0ff; font-size:24px; text-shadow:2px 2px #f0f; text-align:center; margin-bottom:20px;">NEON BOSS RUSH 3D</h1>
                      <div style="display:flex; flex-direction:column; gap:15px; align-items:center;">
                          <button class="btn" id="fs-start-btn">START FULLSCREEN</button>
                          <button class="btn" style="background:#555; font-size:12px;" id="win-start-btn">START WINDOWED</button>
+                         ${vrSupported ? '<button class="btn" style="background:#00ffff; color:#000; font-size:12px;" id="vr-start-btn">PLAY IN VR</button>' : ''}
                      </div>`;
         
         const start = (fs) => { 
@@ -806,6 +815,12 @@
         document.getElementById('fs-start-btn').addEventListener('touchstart', (e) => { e.preventDefault(); start(true); });
         document.getElementById('win-start-btn').addEventListener('click', () => start(false));
         document.getElementById('win-start-btn').addEventListener('touchstart', (e) => { e.preventDefault(); start(false); });
+        
+        if (vrSupported) {
+            const vrBtn = document.getElementById('vr-start-btn');
+            vrBtn.addEventListener('click', () => { window.location.href = 'vr.html'; });
+            vrBtn.addEventListener('touchstart', (e) => { e.preventDefault(); window.location.href = 'vr.html'; });
+        }
     }
 
     initInteraction(); render();
