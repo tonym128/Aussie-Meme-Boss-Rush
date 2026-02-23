@@ -24,6 +24,7 @@ In the year 20XX, the Great Emu War has escalated into a digital nightmare. The 
 - **Materials:** Bosses use procedural "Noise" chunks (Snoise) for fur, scales, and tech-vein effects without external textures.
 - **Targeting:** Pure 2D screen-space hit detection. Entities and boss parts are projected to UI coordinates for pixel-perfect tap/click accuracy.
 - **Physics:** Custom ragdoll simulation triggered on boss death—pieces fall, bounce off the ground plane, and flail in slow motion before exploding into confetti.
+- **Phase 2 Transformation:** Mid-fight cinematic cutscene where body parts dynamically transform into indestructible glowing silver steel, requiring precision targeting of remaining organic segments.
 - **Responsive Design:** Dynamic viewport scaling (`--vh`) and adaptive UI layouts to support Portrait and Landscape orientations across all devices.
 
 ## 👾 The Bosses
@@ -41,6 +42,5 @@ In the year 20XX, the Great Emu War has escalated into a digital nightmare. The 
 - **Responsiveness:** Always test UI overlaps in narrow portrait modes. The Shield Indicator and Multiplier should never collide.
 
 ## 🚀 Future Ideas
-- **Boss Phase 2:** Mid-fight transformations and armor plating.
 - **Global Leaderboard:** Replace LocalStorage with a lightweight backend for cross-device competition.
 - **Shop:** Spend score between missions on shield duration or projectile speed.

@@ -77,7 +77,7 @@
     const grid = new THREE.GridHelper(1000, 50, 0x00ffff, 0x222222); grid.position.y = -14.9; grid.material.opacity = 0.2; grid.material.transparent = true; scene.add(grid);
 
     const activeUniforms = [];
-    let state = 'title', prevState = 'playing', level = 0, pHP = 100, score = 0, mult = 1, boss = null, eHP = 0, eMax = 1, timeScale = 1;
+    let state = 'title', prevState = 'playing', level = 0, pHP = 100, score = 0, mult = 1, boss = null, eHP = 0, eMax = 1, timeScale = 1, phase = 1;
     let entities = [], env = [], particles = [], ragdolls = [], flash = 0, shake = 0, playerName = "";
     let isFiring = false, lastFireTime = 0;
     let audioCtx = null, musicOsc = null, musicGain = null, isMusicOn = true, isSoundOn = true;
@@ -111,7 +111,7 @@
     function mkDropBear() { 
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x666666, type: 'fur' }); 
         g.add(new THREE.Mesh(new THREE.CapsuleGeometry(5, 8, 4, 8), m)); // Body
-        const head = new THREE.Mesh(new THREE.SphereGeometry(4.5, 8, 8), m); head.position.y = 7; g.add(head);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(4.5, 8, 8), m); head.position.y = 7; head.name = "head"; g.add(head);
         const earG = new THREE.SphereGeometry(1.5, 4, 4);
         const lEar = new THREE.Mesh(earG, m); lEar.position.set(-3.5, 10, 0); g.add(lEar);
         const rEar = new THREE.Mesh(earG, m); rEar.position.set(3.5, 10, 0); g.add(rEar);
@@ -127,7 +127,7 @@
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x553322, type: 'scales' }); 
         const body = new THREE.Mesh(new THREE.SphereGeometry(7, 8, 8), m); body.scale.set(1, 0.8, 1.3); g.add(body);
         const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 12, 6), m); neck.position.set(0, 8, 6); neck.rotation.x = -0.3; g.add(neck);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), m); head.position.set(0, 14, 9); g.add(head);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), m); head.position.set(0, 14, 9); head.name = "head"; g.add(head);
         const beak = new THREE.Mesh(new THREE.ConeGeometry(0.8, 4, 4), new THREE.MeshStandardMaterial({color:0x996633})); beak.position.set(0, 14, 12); beak.rotation.x = Math.PI/2; g.add(beak);
         const legG = new THREE.CylinderGeometry(0.5, 0.5, 10, 4);
         const lLeg = new THREE.Mesh(legG, m); lLeg.position.set(-3, -8, 0); g.add(lLeg);
@@ -137,7 +137,7 @@
     function mkMagpie() { 
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x111111, type: 'tech' }); 
         const body = new THREE.Mesh(new THREE.CapsuleGeometry(3, 8, 4, 8), m); body.rotation.x = Math.PI/2; g.add(body);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(2.8, 8, 8), m); head.position.z = 6; g.add(head);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(2.8, 8, 8), m); head.position.z = 6; head.name = "head"; g.add(head);
         const beak = new THREE.Mesh(new THREE.ConeGeometry(0.6, 3, 4), new THREE.MeshStandardMaterial({color:0x333333})); beak.position.set(0, 0, 8.5); beak.rotation.x = Math.PI/2; g.add(beak);
         const wingG = new THREE.BoxGeometry(12, 0.2, 6);
         const lWing = new THREE.Mesh(wingG, new THREE.MeshStandardMaterial({color:0xffffff})); lWing.position.set(-7, 0, 0); lWing.rotation.y = 0.2; g.add(lWing);
@@ -147,7 +147,7 @@
     }
     function mkSpider() { 
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x221133, type: 'vein' }); 
-        const b1 = new THREE.Mesh(new THREE.SphereGeometry(4, 8, 8), m); b1.position.z = 3; g.add(b1);
+        const b1 = new THREE.Mesh(new THREE.SphereGeometry(4, 8, 8), m); b1.position.z = 3; b1.name = "head"; g.add(b1);
         const b2 = new THREE.Mesh(new THREE.SphereGeometry(6, 8, 8), m); b2.position.z = -4; b2.scale.set(1, 0.8, 1.2); g.add(b2);
         for(let i=0; i<8; i++){ 
             const l = new THREE.Group(); 
@@ -161,7 +161,7 @@
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x884422, type: 'plasma' }); 
         const body = new THREE.Mesh(new THREE.CylinderGeometry(4, 6, 12, 8), m); g.add(body);
         const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.5, 6, 6), m); neck.position.set(0, 8, 2); neck.rotation.x = -0.4; g.add(neck);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 5), m); head.position.set(0, 11, 4); g.add(head);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 5), m); head.position.set(0, 11, 4); head.name = "head"; g.add(head);
         const tail = new THREE.Mesh(new THREE.CapsuleGeometry(1.5, 12, 4, 4), m); tail.position.set(0, -4, -6); tail.rotation.x = -Math.PI/4; g.add(tail);
         const legG = new THREE.CapsuleGeometry(2, 6, 4, 4);
         const lLeg = new THREE.Mesh(legG, m); lLeg.position.set(-5, -6, 0); g.add(lLeg);
@@ -338,6 +338,7 @@
         showScroller(introText, startLevel);
     }
     function startLevel() {
+        phase = 1;
         if(boss) scene.remove(boss); entities.forEach(e=>scene.remove(e.mesh)); entities=[]; env.forEach(e=>scene.remove(e)); env=[]; particles.forEach(p=>scene.remove(p.m)); particles=[]; ragdolls.forEach(r=>scene.remove(r.mesh)); ragdolls=[]; activeUniforms.length=0;
         const l=LVLS[level]; eHP=l.hp; eMax=l.hp; boss=l.create(); scene.add(boss);
         l.mkEnv(); scene.background=new THREE.Color(l.bg); scene.fog.color=new THREE.Color(l.bg);
@@ -381,11 +382,20 @@
                 const proj = v.clone().project(camera);
                 const bx = (proj.x+1)/2*width, by = (-proj.y+1)/2*height;
                 if(Math.hypot(mx-bx, my-by) < 45) {
-                    eHP-=dmg; flash=5; shake=5; 
-                    targetPoint.copy(v);
-                    spawnP(targetPoint, 20, 0xffff00); hit=true; 
-                    score+=100*mult; mult=Math.min(16,mult*2);
-                    playHitSound();
+                    if(c.isArmor) {
+                        playClankSound();
+                        spawnP(v, 10, 0xffffff); // White sparks for armor
+                        hit = true; 
+                        targetPoint.copy(v);
+                        mult = 1; // Hitting armor resets multiplier but counts as "hit" to not trigger miss logic? 
+                        // Actually let's count it as a hit for the laser visual but reset mult.
+                    } else {
+                        eHP-=dmg; flash=5; shake=5; 
+                        targetPoint.copy(v);
+                        spawnP(targetPoint, 20, 0xffff00); hit=true; 
+                        score+=100*mult; mult=Math.min(16,mult*2);
+                        playHitSound();
+                    }
                 }
             });
         }
@@ -417,7 +427,7 @@
     function dodge() { if(ctrl.cd<=0 && !ctrl.active){ ctrl.active=true; ctrl.activeTimer=120; camera.position.z=45; } }
 
     function update() {
-        if(state === 'paused') return;
+        if(state === 'paused' || state === 'transforming') return;
         const now = Date.now();
         const t = now * 0.001; activeUniforms.forEach(u=>{ if(u.uTime) u.uTime.value=t; });
         if(state==='title'||state==='leaderboard'||state==='input') return;
@@ -427,6 +437,93 @@
         env.forEach((obj,i)=>{ if(level===0||level===2) obj.rotation.z=Math.sin(t*2+i)*0.05; });
         if(state==='playing'){
             if(isFiring && now - lastFireTime > 250) { fire(); lastFireTime = now; }
+            
+            // Phase 2 Transformation trigger
+            if(phase === 1 && eHP <= eMax / 3) {
+                state = 'transforming';
+                phase = 2;
+                const armorMat = new THREE.MeshStandardMaterial({color: 0xdddddd, metalness: 1.0, roughness: 0.0, emissive: 0xffffff, emissiveIntensity: 0.5});
+                
+                // Identify parts to change (excluding head and existing armor)
+                const parts = []; boss.traverse(c => { 
+                    if(c.isMesh && !c.name.toLowerCase().includes('head')) parts.push(c); 
+                });
+                // Shuffle and pick 1/3
+                for (let i = parts.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [parts[i], parts[j]] = [parts[j], parts[i]];
+                }
+                const targets = parts.slice(0, Math.ceil(parts.length / 3));
+                const maxArmor = targets.length;
+                let armorCount = 0;
+
+                const armSpot = new THREE.SpotLight(0xffffff, 5);
+                armSpot.position.set(0, 50, 0);
+                armSpot.angle = Math.PI / 8;
+                armSpot.penumbra = 0.5;
+                scene.add(armSpot);
+                
+                const attachArmor = () => {
+                    if(!boss || armorCount >= maxArmor) { scene.remove(armSpot); state = 'playing'; return; }
+                    
+                    const targetPart = targets[armorCount];
+                    const targetWPos = new THREE.Vector3();
+                    targetPart.getWorldPosition(targetWPos);
+
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), armorMat);
+                    const side = Math.random() > 0.5 ? 1 : -1;
+                    arm.position.set(side * 100, (Math.random()-0.5)*40, -20);
+                    scene.add(arm);
+                    armSpot.target = arm;
+
+                    const startPos = arm.position.clone();
+                    const startTime = Date.now();
+                    const duration = 250;
+
+                    const moveArm = () => {
+                        const elapsed = Date.now() - startTime;
+                        const t = Math.min(1, elapsed / duration);
+                        targetPart.getWorldPosition(targetWPos);
+                        arm.position.lerpVectors(startPos, targetWPos, t);
+                        arm.lookAt(targetWPos);
+
+                        if(t < 1) {
+                            requestAnimationFrame(moveArm);
+                        } else {
+                            playClankSound();
+                            spawnP(targetWPos, 10, 0xffffff);
+                            scene.remove(arm);
+                            
+                            // Transform the part into steel
+                            targetPart.material = armorMat;
+                            targetPart.isArmor = true;
+                            
+                            armorCount++;
+                            if(armorCount < maxArmor) {
+                                setTimeout(attachArmor, 100);
+                            } else {
+                                setTimeout(() => { 
+                                    scene.remove(armSpot);
+                                    state = 'playing'; 
+                                }, 500);
+                            }
+                        }
+                    };
+                    moveArm();
+                };
+
+                const spinStart = now;
+                const initialSpin = setInterval(() => {
+                    if(!boss) { clearInterval(initialSpin); return; }
+                    boss.rotation.y += 0.5;
+                    if(Date.now() - spinStart > 800) {
+                        clearInterval(initialSpin);
+                        attachArmor();
+                    }
+                }, 16);
+                return; 
+            }
+
             if(Math.random()<0.012){ 
                 const pr=new THREE.Mesh(new THREE.IcosahedronGeometry(1.2,0), new THREE.MeshStandardMaterial({emissive:0xff00ff,emissiveIntensity:2})); 
                 pr.position.copy(boss.position); scene.add(pr); entities.push({mesh:pr,type:'prj',dead:false}); 
@@ -624,6 +721,9 @@
             uiCtx.fillText("PAUSED", width/2, height/2);
             uiCtx.font="10px 'Press Start 2P'";
             uiCtx.fillText("PRESS ANY KEY OR TAP TO RESUME", width/2, height/2 + 40);
+        } else if(state==='transforming'){
+            uiCtx.fillStyle="rgba(0,0,0,0.3)"; uiCtx.fillRect(0,0,width,height);
+            drawText("PHASE 2: ARMORED", width/2, height/2, 24, "#0ff");
         }
         requestAnimationFrame(render);
     }
@@ -650,6 +750,7 @@
 
     function playShootSound() { playSfx(440, 'square', 0.1, 0.1); }
     function playHitSound() { playSfx(150, 'sawtooth', 0.1, 0.1); }
+    function playClankSound() { playSfx(800, 'square', 0.05, 0.15); }
     function playExplosionSound() { playSfx(100, 'sawtooth', 0.5, 0.2); }
     function playPowerupSound() { playSfx(880, 'sine', 0.3, 0.1); }
 

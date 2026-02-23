@@ -11,6 +11,7 @@ The game is self-contained in a single HTML file.
 
 ## 🌟 Key Features
 - **Cinematic Experience:** Star Wars-style perspective story scrollers for mission intros and outros.
+- **Phase 2 Boss Transformations:** When critical health is reached, bosses enter a cinematic transformation sequence where 1/3 of their body parts turn into indestructible, glowing silver steel.
 - **Dynamic 3D Bosses:** Face the "Big Five" - Drop Bear, Cyber Emu, Magpie Drone, Cyber Huntsman, and the K-9000 Roo.
 - **Soft Body Physics:** Ragdoll death animations with slow-motion flailing and confetti explosions.
 - **Intuitive Controls:** 
