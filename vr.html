@@ -71,7 +71,25 @@
     cameraRig.position.set(0, 0, 0); 
     cameraRig.add(camera);
     scene.add(cameraRig);
-    log("Camera Rig at y=0.");
+
+    // Hover Platform
+    const platform = new THREE.Group();
+    const platBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.3, 0.05, 6), new THREE.MeshStandardMaterial({color: 0x111111, metalness: 0.9, roughness: 0.1}));
+    platform.add(platBase);
+    const platRing = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.02, 8, 6), new THREE.MeshBasicMaterial({color: 0x00ffff}));
+    platRing.rotation.x = Math.PI/2; platform.add(platRing);
+    cameraRig.add(platform);
+
+    // Digital Dust (Reference Particles)
+    const dustCount = 150;
+    const dustGeometry = new THREE.BufferGeometry();
+    const dustPos = new Float32Array(dustCount * 3);
+    for(let i=0; i<dustCount*3; i++) dustPos[i] = (Math.random() - 0.5) * 10;
+    dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+    const dustMaterial = new THREE.PointsMaterial({color: 0x00ffff, size: 0.02, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending});
+    const dust = new THREE.Points(dustGeometry, dustMaterial);
+    cameraRig.add(dust);
+    log("Camera Rig, Platform, and Dust initialized.");
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -91,36 +109,89 @@
     const sun = new THREE.DirectionalLight(0xffffff, 1); sun.position.set(10, 20, 10); sun.castShadow = true; scene.add(sun);
     const bossSpot = new THREE.SpotLight(0xffffff, 3); bossSpot.position.set(0, 20, -5); bossSpot.castShadow = true; scene.add(bossSpot);
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ color: 0x020205 }));
     ground.rotation.x = -Math.PI/2; ground.position.y = 0; ground.receiveShadow = true; scene.add(ground);
-    scene.add(new THREE.GridHelper(200, 40, 0x00ffff, 0x222222));
+    const grid = new THREE.GridHelper(1000, 100, 0x00ffff, 0x111111);
+    grid.position.y = 0.01; scene.add(grid);
+
+    function mkBackground() {
+        for(let i=0; i<30; i++) {
+            const h = 20 + Math.random() * 60;
+            const g = new THREE.BoxGeometry(1.5, h, 1.5);
+            const m = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.2, transparent: true, opacity: 0.4 });
+            const p = new THREE.Mesh(g, m);
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 40 + Math.random() * 60;
+            p.position.set(Math.cos(angle) * dist, h/2 - 2, Math.sin(angle) * dist);
+            scene.add(p); env.push(p);
+            const cap = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.2, 1.6), new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2 }));
+            cap.position.y = h/2; p.add(cap);
+        }
+    }
 
     // Game State
     let state = 'title', level = 0, pHP = 100, score = 0, mult = 1, boss = null, eHP = 0, eMax = 1, timeScale = 1, phase = 1;
     let entities = [], particles = [], ragdolls = [], env = [], activeUniforms = [];
     let playerName = "", shake = 0, flash = 0, scrollerText = "", scrollerCallback = null;
+    const prevCamPos = new THREE.Vector3();
     const ctrl = { w: 'p', cd: 0, active: false, activeTimer: 0, wt: 0 };
     const KB_CHARS = "QWERTYUIOPASDFGHJKLZXCVBNM1234567890".split("");
 
-    // Audio
-    let audioCtx = null, isMusicOn = true, isSoundOn = true;
-    function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-    function playSfx(freq, type, duration, vol) {
-        if (!isSoundOn || !audioCtx) return;
-        try {
-            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            gain.gain.setValueAtTime(vol, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + duration);
-        } catch(e) {}
+    // Audio System (Spatial)
+    const audioCtx = THREE.AudioContext.getContext();
+    const listener = new THREE.AudioListener();
+    camera.add(listener);
+    const sounds = {
+        shoot: new THREE.Audio(listener),
+        hit: new THREE.PositionalAudio(listener),
+        explode: new THREE.Audio(listener),
+        powerup: new THREE.Audio(listener),
+        clank: new THREE.PositionalAudio(listener)
+    };
+
+    const audioLoader = new THREE.AudioLoader();
+    function createSynthBuffer(freq, type, duration) {
+        const sampleRate = audioCtx.sampleRate;
+        const frameCount = sampleRate * duration;
+        const buffer = audioCtx.createBuffer(1, frameCount, sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < frameCount; i++) {
+            const t = i / sampleRate;
+            if (type === 'square') data[i] = Math.sin(2 * Math.PI * freq * t) > 0 ? 0.1 : -0.1;
+            else if (type === 'sawtooth') data[i] = (i % (sampleRate / freq)) / (sampleRate / freq) * 0.2 - 0.1;
+            else data[i] = Math.sin(2 * Math.PI * freq * t) * 0.1;
+            data[i] *= (1 - i / frameCount);
+        }
+        return buffer;
     }
-    const playShootSound = () => playSfx(440, 'square', 0.1, 0.05);
-    const playHitSound = () => playSfx(150, 'sawtooth', 0.1, 0.05);
-    const playClankSound = () => playSfx(800, 'square', 0.05, 0.1);
-    const playExplosionSound = () => playSfx(100, 'sawtooth', 0.5, 0.15);
-    const playPowerupSound = () => playSfx(880, 'sine', 0.3, 0.1);
+
+    function initSpatialAudio() {
+        sounds.shoot.setBuffer(createSynthBuffer(440, 'square', 0.1));
+        sounds.hit.setBuffer(createSynthBuffer(150, 'sawtooth', 0.1)); sounds.hit.setRefDistance(2);
+        sounds.explode.setBuffer(createSynthBuffer(80, 'sawtooth', 0.6));
+        sounds.powerup.setBuffer(createSynthBuffer(880, 'sine', 0.3));
+        sounds.clank.setBuffer(createSynthBuffer(800, 'square', 0.05)); sounds.clank.setRefDistance(2);
+    }
+
+    // Object Pooling
+    const beamPool = [];
+    for(let i=0; i<20; i++) {
+        const b = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1, 4), new THREE.MeshBasicMaterial({transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending}));
+        b.add(new THREE.Mesh(new THREE.CylinderGeometry(0.001, 0.001, 1, 4), new THREE.MeshBasicMaterial({color: 0xffffff})));
+        b.visible = false; scene.add(b); beamPool.push(b);
+    }
+
+    function getBeam(start, end, col) {
+        const b = beamPool.find(p => !p.visible) || beamPool[0];
+        b.visible = true;
+        const dist = start.distanceTo(end);
+        b.scale.set(1, dist, 1);
+        b.position.copy(start.clone().lerp(end, 0.5));
+        b.lookAt(end); b.rotateX(Math.PI/2);
+        b.material.color.set(col);
+        setTimeout(() => b.visible = false, 50);
+        return b;
+    }
 
     let musicIndex = 0;
     const bassline = [55, 55, 65, 41, 41, 41, 49, 49];
@@ -164,7 +235,8 @@
     function mkDropBear() {
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x666666, type: 'fur' });
         g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.8, 4, 8), m));
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), m); head.position.y = 0.7; head.name = "head"; g.add(head);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), m); head.position.y = 0.7; head.name = "head"; 
+        head.isWeakPoint = true; g.add(head);
         const earG = new THREE.SphereGeometry(0.15, 4, 4);
         const lEar = new THREE.Mesh(earG, m); lEar.position.set(-0.35, 1.0, 0); g.add(lEar);
         const rEar = new THREE.Mesh(earG, m); rEar.position.set(0.35, 1.0, 0); g.add(rEar);
@@ -180,7 +252,8 @@
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x553322, type: 'scales' });
         const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 8), m); body.scale.set(1, 0.8, 1.3); g.add(body);
         const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.2, 6), m); neck.position.set(0, 0.8, 0.6); neck.rotation.x = -0.3; g.add(neck);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), m); head.position.set(0, 1.4, 0.9); head.name = "head"; g.add(head);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), m); head.position.set(0, 1.4, 0.9); head.name = "head"; 
+        head.isWeakPoint = true; g.add(head);
         const beak = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.4, 4), new THREE.MeshStandardMaterial({color:0x996633})); beak.position.set(0, 1.4, 1.2); beak.rotation.x = Math.PI/2; g.add(beak);
         const legG = new THREE.CylinderGeometry(0.05, 0.05, 1.0, 4);
         const lLeg = new THREE.Mesh(legG, m); lLeg.position.set(-0.3, -0.8, 0); g.add(lLeg);
@@ -190,7 +263,8 @@
     function mkMagpie() {
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x111111, type: 'tech' });
         const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.8, 4, 8), m); body.rotation.x = Math.PI/2; g.add(body);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), m); head.position.z = 0.6; head.name = "head"; g.add(head);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), m); head.position.z = 0.6; head.name = "head"; 
+        head.isWeakPoint = true; g.add(head);
         const beak = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.3, 4), new THREE.MeshStandardMaterial({color:0x333333})); beak.position.set(0, 0, 0.85); beak.rotation.x = Math.PI/2; g.add(beak);
         const wingG = new THREE.BoxGeometry(1.2, 0.02, 0.6);
         const lWing = new THREE.Mesh(wingG, new THREE.MeshStandardMaterial({color:0xffffff})); lWing.position.set(-0.7, 0, 0); lWing.rotation.y = 0.2; g.add(lWing);
@@ -200,12 +274,13 @@
     }
     function mkSpider() {
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x221133, type: 'vein' });
-        const b1 = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), m); b1.position.z = 0.3; b1.name = "head"; g.add(b1);
+        const b1 = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), m); b1.position.z = 0.3; b1.name = "head"; 
+        b1.isWeakPoint = true; g.add(b1);
         const b2 = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), m); b2.position.z = -0.4; b2.scale.set(1, 0.8, 1.2); g.add(b2);
         for(let i=0; i<8; i++){
             const l = new THREE.Group();
             const s1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.8), m); s1.position.z = 0.4; l.add(s1);
-            const s2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.0), new THREE.MeshStandardMaterial({emissive:0x00ffff})); s2.position.set(0, -0.4, 1.0); s2.rotation.x = Math.PI/3; l.add(s2);
+            const s2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.0), new THREE.MeshStandardMaterial({emissive:0x00ffff})); s2.position.set(0, -4, 1.0); s2.rotation.x = Math.PI/3; l.add(s2);
             l.rotation.y = (i/8)*Math.PI*2; l.position.y = 0.2; g.add(l);
         }
         return applyShadows(g);
@@ -214,7 +289,8 @@
         const g = new THREE.Group(); const m = getProceduralMaterial({ color: 0x884422, type: 'plasma' });
         const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 1.2, 8), m); g.add(body);
         const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, 0.6, 6), m); neck.position.set(0, 0.8, 0.2); neck.rotation.x = -0.4; g.add(neck);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), m); head.position.set(0, 1.1, 0.4); head.name = "head"; g.add(head);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), m); head.position.set(0, 1.1, 0.4); head.name = "head"; 
+        head.isWeakPoint = true; g.add(head);
         const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 1.2, 4, 4), m); tail.position.set(0, -0.4, -0.6); tail.rotation.x = -Math.PI/4; g.add(tail);
         const legG = new THREE.CapsuleGeometry(0.2, 0.6, 4, 4);
         const lLeg = new THREE.Mesh(legG, m); lLeg.position.set(-0.5, -0.6, 0); g.add(lLeg);
@@ -239,14 +315,22 @@
     function mkShed() { for(let i=0; i<10; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 0.2), new THREE.MeshStandardMaterial({color:0x333333})); b.position.set(0, 3, -5 - i*2); scene.add(b); env.push(applyShadows(b)); } }
     function mkOutback() { mkDesert(); for(let i=0; i<15; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1), new THREE.MeshStandardMaterial({color:0x332211})); f.position.set((Math.random()-0.5)*20, 0, -10 - Math.random()*20); scene.add(f); env.push(applyShadows(f)); } }
 
-    // HUD
-    const hudCanvas = document.createElement('canvas');
-    hudCanvas.width = 512; hudCanvas.height = 256;
-    const hudCtx = hudCanvas.getContext('2d');
-    const hudTex = new THREE.CanvasTexture(hudCanvas);
-    const hudMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.4), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true }));
-    hudMesh.position.set(0, 0.4, -1);
-    camera.add(hudMesh);
+    // HUD & UI
+    function mkHUD(w, h) {
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        const tex = new THREE.CanvasTexture(c);
+        return { c, ctx, tex };
+    }
+    const hudL = mkHUD(256, 128), hudR = mkHUD(256, 128), menu = mkHUD(512, 512);
+    
+    const menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: menu.tex, transparent: true, side: THREE.DoubleSide }));
+    menuMesh.position.set(0, 1.5, -2.5);
+    scene.add(menuMesh);
+
+    const hudLMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.06), new THREE.MeshBasicMaterial({ map: hudL.tex, transparent: true, opacity: 0.9 }));
+    const hudRMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.06), new THREE.MeshBasicMaterial({ map: hudR.tex, transparent: true, opacity: 0.9 }));
+    hudLMesh.rotation.x = -Math.PI / 4; hudRMesh.rotation.x = -Math.PI / 4;
 
     function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
         const words = text.split(' '), lines = []; let line = '';
@@ -260,83 +344,106 @@
     }
 
     function updateHUD() {
-        hudCtx.clearRect(0, 0, 512, 256);
-        hudCtx.fillStyle = "rgba(0,0,0,0.8)";
-        hudCtx.fillRect(0, 0, 512, 256);
-        hudCtx.strokeStyle = "#0ff";
-        hudCtx.lineWidth = 4;
-        hudCtx.strokeRect(0, 0, 512, 256);
-        hudCtx.fillStyle = "#fff";
-        hudCtx.font = "bold 24px Arial";
-        hudCtx.textAlign = "center";
-        
-        if(state === 'title') {
-            hudCtx.fillStyle = "#0ff"; hudCtx.font = "bold 32px Arial";
-            hudCtx.fillText("NEON BOSS RUSH VR", 256, 60);
-            hudCtx.fillStyle = "#fff"; hudCtx.font = "20px Arial";
-            hudCtx.fillText("PULL TRIGGER TO START", 256, 120);
-            hudCtx.fillText("SQUEEZE FOR SHIELD", 256, 160);
-            hudCtx.fillStyle = "#f0f"; hudCtx.font = "16px Arial";
-            hudCtx.fillText("TOP OPERATORS", 256, 210);
-        } else if(state === 'leaderboard') {
-            hudCtx.fillStyle = "#0ff"; hudCtx.fillText("TOP OPERATORS", 256, 40);
-            hudCtx.font = "16px Arial"; hudCtx.textAlign = "left";
-            let lb = JSON.parse(localStorage.getItem('aussie_lb') || '[]');
-            lb.slice(0, 5).forEach((e, i) => {
-                hudCtx.fillStyle = (i === 0) ? "#ff0" : "#fff";
-                hudCtx.fillText(`${i+1}. ${e.name}`, 100, 70 + i * 25);
-                hudCtx.fillText(`${e.score}`, 350, 70 + i * 25);
-            });
-            hudCtx.textAlign = "center"; hudCtx.fillStyle = "#0ff";
-            hudCtx.fillText("TRIGGER TO RETURN", 256, 220);
-        } else if(state === 'story') {
-            hudCtx.font = "18px Arial";
-            wrapText(hudCtx, LVLS[level].story, 256, 80, 400, 25);
-        } else if(state === 'scroller') {
-            hudCtx.font = "16px Arial";
-            wrapText(hudCtx, scrollerText, 256, 40, 420, 22);
-        } else if(state === 'intro') {
-            hudCtx.fillStyle = "#f04"; hudCtx.font = "bold 36px Arial";
-            hudCtx.fillText("WARNING", 256, 100);
-            hudCtx.fillText(LVLS[level].n, 256, 160);
-        } else if(state === 'fight') {
-            hudCtx.fillStyle = "#fff"; hudCtx.font = "bold 36px Arial";
-            hudCtx.fillText("FIGHT!", 256, 130);
-        } else if(state === 'input') {
-            hudCtx.fillStyle = "#0ff"; hudCtx.fillText("MISSION DEBRIEF", 256, 50);
-            hudCtx.fillStyle = "#fff"; hudCtx.font = "20px Arial";
-            hudCtx.fillText(`FINAL SCORE: ${score}`, 256, 90);
-            hudCtx.fillText("ENTER INITIALS", 256, 130);
-            hudCtx.font = "bold 40px Arial";
-            hudCtx.fillText(playerName.padEnd(3, "_"), 256, 180);
-            hudCtx.font = "14px Arial";
-            hudCtx.fillText("USE VIRTUAL KEYS TO ENTER", 256, 220);
-        } else if(state === 'playing') {
-            hudCtx.textAlign = "left"; hudCtx.font = "bold 20px Arial";
-            hudCtx.fillText(`LVL: ${level+1}`, 30, 40);
-            hudCtx.textAlign = "right";
-            hudCtx.fillText(`SCORE: ${score}`, 482, 40);
-            hudCtx.textAlign = "center";
-            hudCtx.fillStyle = mult > 1 ? "#0ff" : "#fff";
-            hudCtx.fillText(`X${mult}`, 256, 40);
+        // Menu Drawing
+        menu.ctx.clearRect(0, 0, 512, 512);
+        if(state !== 'playing') {
+            menuMesh.visible = true;
+            menu.ctx.fillStyle = "rgba(0,0,0,0.85)";
+            menu.ctx.fillRect(0, 0, 512, 512);
+            menu.ctx.strokeStyle = "#0ff"; menu.ctx.lineWidth = 4; menu.ctx.strokeRect(4, 4, 504, 504);
+            menu.ctx.fillStyle = "#fff"; menu.ctx.font = "bold 28px Arial"; menu.ctx.textAlign = "center";
             
-            hudCtx.textAlign = "left"; hudCtx.fillStyle = "#0f6";
-            hudCtx.fillText(`HP: ${Math.floor(pHP)}`, 30, 220);
-            
-            hudCtx.textAlign = "right";
-            if(ctrl.active) { hudCtx.fillStyle = "#fff"; hudCtx.fillText("SHIELD: ACTIVE", 482, 220); }
-            else if(ctrl.cd > 0) { hudCtx.fillStyle = "#f55"; hudCtx.fillText(`SHIELD: ${Math.ceil(ctrl.cd/60)}s`, 482, 220); }
-            else { hudCtx.fillStyle = "#0ff"; hudCtx.fillText("SHIELD: READY", 482, 220); }
-
-            if(boss) {
-                hudCtx.fillStyle = "#333"; hudCtx.fillRect(106, 200, 300, 15);
-                hudCtx.fillStyle = "#0ff"; hudCtx.fillRect(106, 200, 300 * (Math.max(0, eHP)/eMax), 15);
-                hudCtx.strokeStyle = "#fff"; hudCtx.lineWidth = 2; hudCtx.strokeRect(106, 200, 300, 15);
-                hudCtx.font = "12px Arial"; hudCtx.fillStyle = "#fff";
-                hudCtx.fillText(LVLS[level].n, 256, 195);
+            if(state === 'title') {
+                menu.ctx.fillStyle = "#0ff"; menu.ctx.font = "bold 40px Arial";
+                menu.ctx.fillText("NEON BOSS RUSH VR", 256, 80);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.font = "24px Arial";
+                menu.ctx.fillText("PULL TRIGGER TO START", 256, 180);
+                menu.ctx.fillText("SQUEEZE FOR SHIELD", 256, 240);
+                menu.ctx.fillStyle = "#f0f"; menu.ctx.fillText("TOP OPERATORS", 256, 420);
+            } else if(state === 'leaderboard') {
+                menu.ctx.fillStyle = "#0ff"; menu.ctx.fillText("TOP OPERATORS", 256, 60);
+                menu.ctx.font = "22px Arial"; menu.ctx.textAlign = "left";
+                let lb = JSON.parse(localStorage.getItem('aussie_lb') || '[]');
+                lb.slice(0, 5).forEach((e, i) => {
+                    menu.ctx.fillStyle = (i === 0) ? "#ff0" : "#fff";
+                    menu.ctx.fillText(`${i+1}. ${e.name}`, 80, 120 + i * 40);
+                    menu.ctx.fillText(`${e.score}`, 380, 120 + i * 40);
+                });
+                menu.ctx.textAlign = "center"; menu.ctx.fillStyle = "#0ff";
+                menu.ctx.fillText("TRIGGER TO RETURN", 256, 450);
+            } else if(state === 'story') {
+                menu.ctx.font = "24px Arial";
+                wrapText(menu.ctx, LVLS[level].story, 256, 120, 440, 35);
+            } else if(state === 'scroller') {
+                menu.ctx.font = "20px Arial";
+                wrapText(menu.ctx, scrollerText, 256, 60, 460, 30);
+            } else if(state === 'input') {
+                menu.ctx.fillStyle = "#0ff"; menu.ctx.fillText("MISSION DEBRIEF", 256, 80);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.font = "24px Arial";
+                menu.ctx.fillText(`FINAL SCORE: ${score}`, 256, 120);
+                menu.ctx.fillText("ENTER INITIALS", 256, 170);
+                menu.ctx.font = "bold 64px Arial"; menu.ctx.fillText(playerName.padEnd(3, "_"), 256, 250);
+                
+                // Draw Keyboard Grid
+                menu.ctx.font = "bold 20px Arial";
+                const kw = 40, kh = 40, gap = 8;
+                const totalW = 10 * kw + 9 * gap;
+                const startX = (512 - totalW) / 2;
+                const startY = 280;
+                KB_CHARS.forEach((char, i) => {
+                    const col = i % 10, row = Math.floor(i / 10);
+                    const x = startX + col * (kw + gap), y = startY + row * (kh + gap);
+                    menu.ctx.fillStyle = "rgba(0, 255, 255, 0.2)";
+                    menu.ctx.fillRect(x, y, kw, kh);
+                    menu.ctx.strokeStyle = "#0ff"; menu.ctx.strokeRect(x, y, kw, kh);
+                    menu.ctx.fillStyle = "#fff";
+                    menu.ctx.fillText(char, x + kw/2, y + kh/2 + 8);
+                });
+                // DEL and ENT
+                menu.ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+                menu.ctx.fillRect(startX, 440, 115, 45);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText("DEL", startX + 57, 470);
+                menu.ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
+                menu.ctx.fillRect(startX + 125, 440, 115, 45);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText("ENT", startX + 182, 470);
+            } else if(state === 'intro') {
+                menu.ctx.fillStyle = "#f04"; menu.ctx.font = "bold 48px Arial";
+                menu.ctx.fillText("WARNING", 256, 200);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText(LVLS[level].n, 256, 300);
+            } else if(state === 'fight') {
+                menu.ctx.fillStyle = "#fff"; menu.ctx.font = "bold 60px Arial";
+                menu.ctx.fillText("FIGHT!", 256, 256);
             }
+            menu.tex.needsUpdate = true;
+        } else { 
+            menuMesh.visible = false; 
         }
-        hudTex.needsUpdate = true;
+
+        // Blaster HUD Drawing
+        hudL.ctx.clearRect(0, 0, 256, 128);
+        hudL.ctx.fillStyle = "rgba(0,0,0,0.7)"; hudL.ctx.fillRect(0, 0, 256, 128);
+        hudL.ctx.strokeStyle = "#0f6"; hudL.ctx.lineWidth = 4; hudL.ctx.strokeRect(0, 0, 256, 128);
+        hudL.ctx.fillStyle = "#0f6"; hudL.ctx.font = "bold 32px Arial"; hudL.ctx.textAlign = "center";
+        hudL.ctx.fillText(`HP: ${Math.floor(pHP)}`, 128, 55);
+        hudL.ctx.font = "20px Arial";
+        if(ctrl.active) { hudL.ctx.fillStyle = "#fff"; hudL.ctx.fillText("SHIELD: ACTIVE", 128, 100); }
+        else if(ctrl.cd > 0) { hudL.ctx.fillStyle = "#f55"; hudL.ctx.fillText(`SHIELD: ${Math.ceil(ctrl.cd/60)}s`, 128, 100); }
+        else { hudL.ctx.fillStyle = "#0ff"; hudL.ctx.fillText("SHIELD: READY", 128, 100); }
+        hudL.tex.needsUpdate = true;
+
+        hudR.ctx.clearRect(0, 0, 256, 128);
+        hudR.ctx.fillStyle = "rgba(0,0,0,0.7)"; hudR.ctx.fillRect(0, 0, 256, 128);
+        hudR.ctx.strokeStyle = "#0ff"; hudR.ctx.lineWidth = 4; hudR.ctx.strokeRect(0, 0, 256, 128);
+        hudR.ctx.fillStyle = "#fff"; hudR.ctx.font = "bold 28px Arial"; hudR.ctx.textAlign = "center";
+        hudR.ctx.fillText(`SCORE: ${score}`, 128, 50);
+        hudR.ctx.fillStyle = mult > 1 ? "#0ff" : "#fff"; hudR.ctx.font = "bold 36px Arial";
+        hudR.ctx.fillText(`X${mult}`, 128, 100);
+        
+        if(boss && state === 'playing') {
+            hudR.ctx.fillStyle = "#333"; hudR.ctx.fillRect(28, 110, 200, 10);
+            hudR.ctx.fillStyle = "#0ff"; hudR.ctx.fillRect(28, 110, 200 * (Math.max(0, eHP)/eMax), 10);
+        }
+        hudR.tex.needsUpdate = true;
     }
 
     // VR Controllers
@@ -345,17 +452,24 @@
     const controllers = [];
     const controllerGrips = [];
 
+    let audioStarted = false;
     function onSelectStart(event) {
-        initAudio();
+        if(!audioStarted) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            initSpatialAudio();
+            audioStarted = true;
+        }
         const controller = event.target;
         if(state === 'playing') fire(controller);
         else if(state === 'title') {
             tempMatrix.identity().extractRotation(controller.matrixWorld);
             raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
             raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-            const intersects = raycaster.intersectObject(hudMesh);
-            if (intersects.length > 0 && intersects[0].uv.y < 0.3) { state = 'leaderboard'; }
-            else { startGame(); }
+            const intersects = raycaster.intersectObject(menuMesh);
+            if (intersects.length > 0) {
+                if (intersects[0].uv.y < 0.25) { state = 'leaderboard'; }
+                else { startGame(); }
+            }
         }
         else if(state === 'leaderboard') state = 'title';
         else if(state === 'story') { startLevel(); }
@@ -367,14 +481,45 @@
             }
         }
         else if(state === 'input') {
-            if (playerName.length < 3) playerName += KB_CHARS[Math.floor(Math.random()*KB_CHARS.length)];
-            else {
-                let lb = JSON.parse(localStorage.getItem('aussie_lb') || '[]');
-                lb.push({ name: playerName, score });
-                lb.sort((a, b) => b.score - a.score);
-                localStorage.setItem('aussie_lb', JSON.stringify(lb.slice(0, 10)));
-                state = 'leaderboard';
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            const intersects = raycaster.intersectObject(menuMesh);
+            if (intersects.length > 0) {
+                const uv = intersects[0].uv;
+                const px = uv.x * 512, py = (1 - uv.y) * 512;
+                const kw = 40, kh = 40, gap = 8;
+                const totalW = 10 * kw + 9 * gap;
+                const startX = (512 - totalW) / 2;
+                const startY = 280;
+
+                if (py >= startY && py <= startY + 4 * (kh + gap)) {
+                    const row = Math.floor((py - startY) / (kh + gap));
+                    const col = Math.floor((px - startX) / (kw + gap));
+                    if (col >= 0 && col < 10) {
+                        const idx = row * 10 + col;
+                        if (idx < KB_CHARS.length && playerName.length < 3) {
+                            playerName += KB_CHARS[idx];
+                            sounds.clank.play();
+                        }
+                    }
+                } else if (py >= 440 && py <= 485) {
+                    if (px >= startX && px <= startX + 115) {
+                        playerName = playerName.slice(0, -1);
+                        sounds.clank.play();
+                    } else if (px >= startX + 125 && px <= startX + 240) {
+                        if (playerName.length === 3) {
+                            let lb = JSON.parse(localStorage.getItem('aussie_lb') || '[]');
+                            lb.push({ name: playerName, score });
+                            lb.sort((a, b) => b.score - a.score);
+                            localStorage.setItem('aussie_lb', JSON.stringify(lb.slice(0, 10)));
+                            state = 'leaderboard';
+                            sounds.powerup.play();
+                        }
+                    }
+                }
             }
+            fire(controller);
         }
     }
 
@@ -407,6 +552,11 @@
         barrel.position.z = -0.15;
         blasterG.add(barrel);
 
+        // Add Blaster-mounted HUD
+        const hMesh = (i === 0) ? hudLMesh : hudRMesh;
+        hMesh.position.set(0, 0.05, -0.05);
+        blasterG.add(hMesh);
+
         grip.add(blasterG);
 
         const muzzle = new THREE.Group();
@@ -433,12 +583,27 @@
         }
     }
 
+    const muzzleFlashG = new THREE.SphereGeometry(0.04, 8, 8);
+    const muzzleFlashM = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+
     function fire(controller) {
-        playShootSound();
+        if (!isSoundOn) return;
+        sounds.shoot.play();
         if (controller.inputSource && controller.inputSource.gamepad && controller.inputSource.gamepad.hapticActuators) {
             const actuator = controller.inputSource.gamepad.hapticActuators[0];
-            if (actuator) actuator.pulse(0.6, 60);
+            if (actuator) actuator.pulse(0.8, 60);
         }
+
+        // Blaster Recoil
+        if(controller.blaster) {
+            controller.blaster.position.z += 0.03;
+            controller.blaster.rotation.x -= 0.1;
+        }
+
+        // Muzzle Flash
+        const flashObj = new THREE.Mesh(muzzleFlashG, muzzleFlashM);
+        controller.muzzle.add(flashObj);
+        setTimeout(() => controller.muzzle.remove(flashObj), 40);
 
         tempMatrix.identity().extractRotation(controller.matrixWorld);
         raycaster.ray.origin.setFromMatrixPosition(controller.muzzle.matrixWorld);
@@ -447,34 +612,49 @@
         const targets = [];
         if(boss) boss.traverse(c => { if(c.isMesh) targets.push(c); });
         entities.forEach(e => targets.push(e.mesh));
+        if (state !== 'playing' && state !== 'warp') targets.push(menuMesh);
 
         const intersects = raycaster.intersectObjects(targets);
         let hit = false, point = raycaster.ray.at(20, new THREE.Vector3());
         const dmg = ctrl.w === 'h' ? 50 : 25;
+        const col = ctrl.w === 'h' ? 0x00ffff : 0x00ff00;
 
         if (intersects.length > 0) {
             const hitObj = intersects[0].object;
             point = intersects[0].point;
-            if(hitObj.isArmor) {
-                playClankSound();
+            if (hitObj === menuMesh) {
+                spawnP(point, 5, 0x00ffff);
+            } else if(hitObj.isArmor) {
+                sounds.clank.position.copy(point); sounds.clank.play();
                 spawnP(point, 10, 0xffffff);
                 mult = 1;
             } else {
                 let isBossPart = false;
                 if(boss) boss.traverse(c => { if(c === hitObj) isBossPart = true; });
                 if(isBossPart) {
-                    eHP -= dmg; mult = Math.min(16, mult * 2); score += 100 * mult;
-                    playHitSound(); flash = 5;
+                    let finalDmg = dmg;
+                    if (hitObj.isWeakPoint) {
+                        const bossDir = new THREE.Vector3();
+                        hitObj.getWorldDirection(bossDir);
+                        // Frontal hit: ray direction opposite to boss forward (+Z).
+                        if (bossDir.dot(raycaster.ray.direction) < -0.7) {
+                            finalDmg *= 3;
+                            spawnP(point, 40, 0xff0000); // Red sparks for critical hit
+                            flash = 10;
+                        }
+                    }
+                    eHP -= finalDmg; mult = Math.min(16, mult * 2); score += 100 * mult;
+                    sounds.hit.position.copy(point); sounds.hit.play(); flash = Math.max(flash, 5);
                     spawnP(point, 20, 0xffff00);
                 } else {
                     const ent = entities.find(e => e.mesh === hitObj);
                     if(ent) {
                         ent.dead = true;
-                        if(ent.type === 'prj') { score += 200; spawnP(point, 12, 0xff00ff); playHitSound(); }
+                        if(ent.type === 'prj') { score += 200; spawnP(point, 12, 0xff00ff); sounds.hit.position.copy(point); sounds.hit.play(); }
                         else { 
                             if(ent.k === 'hp') pHP = Math.min(100, pHP + 45); 
                             else { ctrl.w = 'h'; ctrl.wt = 400; }
-                            score += 500; playPowerupSound(); spawnP(point, 20, 0x00ffff);
+                            score += 500; sounds.powerup.play(); spawnP(point, 20, 0x00ffff);
                         }
                     }
                 }
@@ -482,19 +662,25 @@
             hit = true;
         } else { mult = 1; }
 
-        const start = new THREE.Vector3(); controller.muzzle.getWorldPosition(start);
-        const beamG = new THREE.CylinderGeometry(0.005, 0.005, start.distanceTo(point), 4);
-        const beamM = new THREE.MeshBasicMaterial({color: ctrl.w === 'h' ? 0x00ffff : 0x00ff00, transparent: true, opacity: 0.6});
-        const beam = new THREE.Mesh(beamG, beamM);
-        beam.position.copy(start.clone().lerp(point, 0.5));
-        beam.lookAt(point); beam.rotateX(Math.PI/2);
-        scene.add(beam);
-        setTimeout(() => scene.remove(beam), 50);
+        const startPos = new THREE.Vector3(); controller.muzzle.getWorldPosition(startPos);
+        getBeam(startPos, point, col);
+    }
+
+    // Near-Miss Slow Mo
+    let nearMissTimer = 0;
+    const nearMissVignette = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 32), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+    nearMissVignette.position.z = -0.5; camera.add(nearMissVignette);
+
+    function triggerNearMiss() {
+        if(nearMissTimer > 0) return;
+        nearMissTimer = 60;
+        timeScale = 0.3;
+        nearMissVignette.material.opacity = 0.4;
     }
 
     function spawnP(pos, n, col) {
         for(let i=0; i<n; i++) {
-            const m = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.02), new THREE.MeshBasicMaterial({ color: col }));
+            const m = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.02), new THREE.MeshBasicMaterial({ color: col, transparent: true, blending: THREE.AdditiveBlending }));
             m.position.copy(pos); scene.add(m);
             particles.push({ m, v: new THREE.Vector3((Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1), life: 20 });
         }
@@ -516,7 +702,7 @@
         phase = 1;
         if(boss) scene.remove(boss); entities.forEach(e=>scene.remove(e.mesh)); entities=[]; env.forEach(e=>scene.remove(e)); env=[]; particles.forEach(p=>scene.remove(p.m)); particles=[]; ragdolls.forEach(r=>scene.remove(r.mesh)); ragdolls=[];
         const l = LVLS[level]; eHP = l.hp; eMax = eHP; boss = l.create(); boss.position.set(0, 1.5, -8); scene.add(boss);
-        l.mkEnv(); scene.background = new THREE.Color(l.bg); scene.fog.color = new THREE.Color(l.bg);
+        l.mkEnv(); mkBackground(); scene.background = new THREE.Color(l.bg); scene.fog.color = new THREE.Color(l.bg);
         
         state = 'story';
         setTimeout(() => { if(state === 'story') { state = 'intro'; playExplosionSound(); } }, 4000);
@@ -529,10 +715,24 @@
         const t = now * 0.001;
         activeUniforms.forEach(u => { if(u.uTime) u.uTime.value = t; });
 
-        if (state === 'playing') {
-            hudMesh.position.set(0, 0.35, -1); 
-        } else {
-            hudMesh.position.set(0, 0.0, -1); 
+        // Platform & Dust Animation
+        platform.position.y = Math.sin(t * 2) * 0.02;
+        dust.rotation.y = t * 0.05;
+        dust.position.y = Math.sin(t * 0.5) * 0.1;
+
+        // Blaster Recoil recovery
+        controllers.forEach(c => {
+            if(c.blaster) {
+                c.blaster.position.z = THREE.MathUtils.lerp(c.blaster.position.z, 0, 0.2);
+                c.blaster.rotation.x = THREE.MathUtils.lerp(c.blaster.rotation.x, 0, 0.2);
+            }
+        });
+
+        // Update Menu Position relative to camera when not playing
+        if(state !== 'playing') {
+            const forward = new THREE.Vector3(0, 0, -2.5).applyQuaternion(camera.quaternion);
+            menuMesh.position.copy(camera.position).add(forward);
+            menuMesh.lookAt(camera.position);
         }
 
         if(state === 'playing') {
@@ -540,11 +740,31 @@
                 boss.position.x = Math.sin(t * 0.8) * 4;
                 boss.position.y = 1.5 + Math.cos(t * 0.4) * 0.8;
                 boss.rotation.y = Math.PI + Math.sin(t * 0.2);
+
+                // BOSS PROCEDURAL ANIMATIONS
+                boss.traverse(c => {
+                    if (c.name === "lArm") c.rotation.z = 0.5 + Math.sin(t * 4) * 0.3;
+                    if (c.name === "rArm") c.rotation.z = -0.5 - Math.sin(t * 4) * 0.3;
+                    if (c.name === "neck") c.rotation.x = -0.3 + Math.sin(t * 3) * 0.1;
+                    if (c.name === "lWing") c.rotation.z = Math.sin(t * 10) * 0.5;
+                    if (c.name === "rWing") c.rotation.z = -Math.sin(t * 10) * 0.5;
+                    if (c.name.startsWith("leg")) {
+                        const idx = parseInt(c.name.replace("leg", ""));
+                        c.rotation.x = Math.sin(t * 5 + idx) * 0.2;
+                    }
+                    if (c.name === "lGlove") c.position.y = 0.4 + Math.sin(t * 6) * 0.2;
+                    if (c.name === "rGlove") c.position.y = 0.4 + Math.cos(t * 6) * 0.2;
+                });
                 
                 if(flash > 0) {
                     boss.traverse(c => { if(c.isMesh) c.material.emissiveIntensity = 5; }); flash--;
                 } else {
-                    boss.traverse(c => { if(c.isMesh) c.material.emissiveIntensity = 1; });
+                    const glint = 1 + Math.sin(t * 10) * 0.5;
+                    boss.traverse(c => { 
+                        if(c.isMesh) {
+                            c.material.emissiveIntensity = c.isWeakPoint ? glint : 1;
+                        }
+                    });
                 }
 
                 if(phase === 1 && eHP <= eMax / 3) {
@@ -603,6 +823,26 @@
                 if(ctrl.activeTimer <= 0) { ctrl.active = false; ctrl.cd = 120; shieldMesh.visible = false; }
             } else if(ctrl.cd > 0) {
                 ctrl.cd--;
+                // Haptic Recharge feedback: frequency increases as cd approaches 0
+                if (ctrl.cd < 60) {
+                    const interval = Math.max(2, Math.floor(ctrl.cd / 6));
+                    if (ctrl.cd % interval === 0) {
+                        controllers.forEach(c => {
+                            if (c.inputSource && c.inputSource.gamepad && c.inputSource.gamepad.hapticActuators) {
+                                const actuator = c.inputSource.gamepad.hapticActuators[0];
+                                if (actuator) actuator.pulse(0.15, 10);
+                            }
+                        });
+                    }
+                }
+                if (ctrl.cd === 1) { // Final "Ready" pulse
+                    controllers.forEach(c => {
+                        if (c.inputSource && c.inputSource.gamepad && c.inputSource.gamepad.hapticActuators) {
+                            const actuator = c.inputSource.gamepad.hapticActuators[0];
+                            if (actuator) actuator.pulse(0.5, 100);
+                        }
+                    });
+                }
             }
             if(ctrl.wt > 0) { ctrl.wt--; if(ctrl.wt <= 0) ctrl.w = 'p'; }
         }
@@ -615,21 +855,58 @@
 
         const camWorldPos = new THREE.Vector3();
         camera.getWorldPosition(camWorldPos);
+        const camVel = camWorldPos.clone().sub(prevCamPos);
+        const isLunging = camVel.length() > 0.02 && camVel.z < -0.005;
+        prevCamPos.copy(camWorldPos);
 
         for(let i=entities.length-1; i>=0; i--){
-            const e = entities[i]; e.mesh.position.add(e.v);
-            if(e.type === 'pwr') { e.mesh.rotation.y += 0.05; e.life--; if(e.life <= 0) e.dead = true; }
-            if(e.mesh.position.distanceTo(camWorldPos) < 0.5) {
+            const e = entities[i]; e.mesh.position.add(e.v.clone().multiplyScalar(timeScale));
+            if(e.type === 'pwr') { e.mesh.rotation.y += 0.05 * timeScale; e.life--; if(e.life <= 0) e.dead = true; }
+            
+            const distToHead = e.mesh.position.distanceTo(camWorldPos);
+            
+            if (e.type === 'reflected') {
+                if (boss && e.mesh.position.distanceTo(boss.position) < 1.5) {
+                    eHP -= 300; score += 1000;
+                    sounds.explode.play(); flash = 10;
+                    spawnP(e.mesh.position, 30, 0x00ffff);
+                    e.dead = true;
+                }
+            } else if(distToHead < 0.6) {
                 if(e.type === 'prj') {
-                    if(!ctrl.active && state === 'playing') { pHP -= 10; playHitSound(); mult = 1; }
+                    if(ctrl.active && isLunging) {
+                        // HEAD-BUTT!
+                        e.type = 'reflected';
+                        if (boss) {
+                            e.v.subVectors(boss.position, e.mesh.position).normalize().multiplyScalar(0.4);
+                        } else {
+                            e.v.multiplyScalar(-2);
+                        }
+                        e.mesh.material.emissive.set(0x00ffff);
+                        sounds.clank.position.copy(camWorldPos); sounds.clank.play();
+                        controllers.forEach(c => {
+                            if (c.inputSource && c.inputSource.gamepad && c.inputSource.gamepad.hapticActuators) {
+                                c.inputSource.gamepad.hapticActuators[0].pulse(1.0, 100);
+                            }
+                        });
+                    } else if(!ctrl.active && state === 'playing') {
+                        pHP -= 10; sounds.hit.position.copy(camWorldPos); sounds.hit.play(); mult = 1;
+                        e.dead = true;
+                    } else if (ctrl.active) {
+                        e.dead = true; // Shield blocks but no lunge means no reflection
+                        spawnP(e.mesh.position, 5, 0x00ffff);
+                    }
                 } else if(e.type === 'pwr') {
                     if(e.k === 'hp') pHP = Math.min(100, pHP + 45); 
                     else { ctrl.w = 'h'; ctrl.wt = 400; }
-                    playPowerupSound();
+                    sounds.powerup.play();
+                    e.dead = true;
                 }
-                e.dead = true;
+            } else if(distToHead < 1.2 && e.type === 'prj') {
+                triggerNearMiss();
             }
-            if(e.dead || e.mesh.position.z > 5) { scene.remove(e.mesh); entities.splice(i, 1); }
+
+            if(e.dead || e.mesh.position.z > 5 || e.mesh.position.length() > 50) { scene.remove(e.mesh); entities.splice(i, 1); }
         }
 
         for(let i=particles.length-1; i>=0; i--){
