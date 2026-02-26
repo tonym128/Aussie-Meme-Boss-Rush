@@ -133,6 +133,7 @@
     let state = 'title', level = 0, pHP = 100, score = 0, mult = 1, boss = null, eHP = 0, eMax = 1, timeScale = 1, phase = 1;
     let entities = [], particles = [], ragdolls = [], env = [], activeUniforms = [];
     let playerName = "", shake = 0, flash = 0, scrollerText = "", scrollerCallback = null;
+    let isMusicOn = true, isSoundOn = true;
     const prevCamPos = new THREE.Vector3();
     const ctrl = { w: 'p', cd: 0, active: false, activeTimer: 0, wt: 0 };
     const KB_CHARS = "QWERTYUIOPASDFGHJKLZXCVBNM1234567890".split("");
@@ -920,6 +921,25 @@
     log("Initializing animation loop...");
     loadingMsg.style.display = 'none';
     renderer.setAnimationLoop(update);
+
+    // Self-Diagnostic Test
+    setTimeout(() => {
+        log("--- SYSTEM HEALTH REPORT ---");
+        const health = {
+            threeJS: !!THREE.Scene,
+            renderer: !!renderer.domElement,
+            xrSupported: !!navigator.xr,
+            audioReady: audioStarted || !!audioCtx,
+            entitiesLoaded: LVLS.length === 5,
+            loopRunning: renderer.info.render.frame > 0
+        };
+        Object.entries(health).forEach(([key, val]) => {
+            log(`${key}: ${val ? "PASSED" : "FAILED"}`);
+        });
+        if (Object.values(health).every(v => v)) log("STATUS: MISSION READY");
+        else log("STATUS: ATTENTION REQUIRED");
+        log("---------------------------");
+    }, 2000);
 </script>
 </body>
 </html>
