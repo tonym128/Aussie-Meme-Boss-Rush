@@ -325,11 +325,15 @@
         const tex = new THREE.CanvasTexture(c);
         return { c, ctx, tex };
     }
-    const hudL = mkHUD(256, 128), hudR = mkHUD(256, 128), menu = mkHUD(512, 512);
+    const hudL = mkHUD(256, 128), hudR = mkHUD(256, 128), menu = mkHUD(512, 512), bossHUD = mkHUD(512, 64);
     
     const menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: menu.tex, transparent: true, side: THREE.DoubleSide }));
     menuMesh.position.set(0, 1.5, -2.5);
     scene.add(menuMesh);
+
+    const bossHUDMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.075), new THREE.MeshBasicMaterial({ map: bossHUD.tex, transparent: true, opacity: 0.8 }));
+    bossHUDMesh.position.set(0, 0.3, -1);
+    camera.add(bossHUDMesh);
 
     const hudLMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.06), new THREE.MeshBasicMaterial({ map: hudL.tex, transparent: true, opacity: 0.9 }));
     const hudRMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.06), new THREE.MeshBasicMaterial({ map: hudR.tex, transparent: true, opacity: 0.9 }));
@@ -347,6 +351,27 @@
     }
 
     function updateHUD() {
+        // Boss HUD
+        bossHUD.ctx.clearRect(0, 0, 512, 64);
+        if(boss && state === 'playing') {
+            bossHUDMesh.visible = true;
+            bossHUD.ctx.fillStyle = "rgba(0,0,0,0.6)";
+            bossHUD.ctx.fillRect(56, 12, 400, 40);
+            bossHUD.ctx.strokeStyle = "#0ff";
+            bossHUD.ctx.lineWidth = 2;
+            bossHUD.ctx.strokeRect(56, 12, 400, 40);
+            const hpW = 390 * (Math.max(0, eHP)/eMax);
+            bossHUD.ctx.fillStyle = "#0ff";
+            bossHUD.ctx.fillRect(61, 17, hpW, 30);
+            bossHUD.ctx.fillStyle = "#fff";
+            bossHUD.ctx.font = "bold 24px Arial";
+            bossHUD.ctx.textAlign = "center";
+            bossHUD.ctx.fillText(LVLS[level].n, 256, 39);
+        } else {
+            bossHUDMesh.visible = false;
+        }
+        bossHUD.tex.needsUpdate = true;
+
         // Menu Drawing
         menu.ctx.clearRect(0, 0, 512, 512);
         if(state !== 'playing') {
@@ -443,10 +468,6 @@
         hudR.ctx.fillStyle = mult > 1 ? "#0ff" : "#fff"; hudR.ctx.font = "bold 36px Arial";
         hudR.ctx.fillText(`X${mult}`, 128, 100);
         
-        if(boss && state === 'playing') {
-            hudR.ctx.fillStyle = "#333"; hudR.ctx.fillRect(28, 110, 200, 10);
-            hudR.ctx.fillStyle = "#0ff"; hudR.ctx.fillRect(28, 110, 200 * (Math.max(0, eHP)/eMax), 10);
-        }
         hudR.tex.needsUpdate = true;
     }
 
