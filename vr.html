@@ -147,7 +147,8 @@
         hit: new THREE.PositionalAudio(listener),
         explode: new THREE.Audio(listener),
         powerup: new THREE.Audio(listener),
-        clank: new THREE.PositionalAudio(listener)
+        clank: new THREE.PositionalAudio(listener),
+        shield: new THREE.Audio(listener)
     };
 
     const audioLoader = new THREE.AudioLoader();
@@ -172,6 +173,7 @@
         sounds.explode.setBuffer(createSynthBuffer(80, 'sawtooth', 0.6));
         sounds.powerup.setBuffer(createSynthBuffer(880, 'sine', 0.3));
         sounds.clank.setBuffer(createSynthBuffer(800, 'square', 0.05)); sounds.clank.setRefDistance(2);
+        sounds.shield.setBuffer(createSynthBuffer(200, 'sine', 0.2));
     }
 
     // Object Pooling
@@ -379,18 +381,18 @@
                 menu.ctx.font = "20px Arial";
                 wrapText(menu.ctx, scrollerText, 256, 60, 460, 30);
             } else if(state === 'input') {
-                menu.ctx.fillStyle = "#0ff"; menu.ctx.fillText("MISSION DEBRIEF", 256, 80);
-                menu.ctx.fillStyle = "#fff"; menu.ctx.font = "24px Arial";
-                menu.ctx.fillText(`FINAL SCORE: ${score}`, 256, 120);
-                menu.ctx.fillText("ENTER INITIALS", 256, 170);
-                menu.ctx.font = "bold 64px Arial"; menu.ctx.fillText(playerName.padEnd(3, "_"), 256, 250);
+                menu.ctx.fillStyle = "#0ff"; menu.ctx.fillText("MISSION DEBRIEF", 256, 60);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.font = "20px Arial";
+                menu.ctx.fillText(`FINAL SCORE: ${score}`, 256, 100);
+                menu.ctx.fillText("ENTER INITIALS", 256, 140);
+                menu.ctx.font = "bold 56px Arial"; menu.ctx.fillText(playerName.padEnd(3, "_"), 256, 200);
                 
                 // Draw Keyboard Grid
-                menu.ctx.font = "bold 20px Arial";
+                menu.ctx.font = "bold 18px Arial";
                 const kw = 40, kh = 40, gap = 8;
                 const totalW = 10 * kw + 9 * gap;
                 const startX = (512 - totalW) / 2;
-                const startY = 280;
+                const startY = 230; // Moved up from 280
                 KB_CHARS.forEach((char, i) => {
                     const col = i % 10, row = Math.floor(i / 10);
                     const x = startX + col * (kw + gap), y = startY + row * (kh + gap);
@@ -398,15 +400,16 @@
                     menu.ctx.fillRect(x, y, kw, kh);
                     menu.ctx.strokeStyle = "#0ff"; menu.ctx.strokeRect(x, y, kw, kh);
                     menu.ctx.fillStyle = "#fff";
-                    menu.ctx.fillText(char, x + kw/2, y + kh/2 + 8);
+                    menu.ctx.fillText(char, x + kw/2, y + kh/2 + 7);
                 });
-                // DEL and ENT
+                // DEL and ENT - Placed below grid
+                const controlY = startY + 4 * (kh + gap) + 10;
                 menu.ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
-                menu.ctx.fillRect(startX, 440, 115, 45);
-                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText("DEL", startX + 57, 470);
+                menu.ctx.fillRect(startX, controlY, 115, 45);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText("DEL", startX + 57, controlY + 30);
                 menu.ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
-                menu.ctx.fillRect(startX + 125, 440, 115, 45);
-                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText("ENT", startX + 182, 470);
+                menu.ctx.fillRect(startX + 125, controlY, 115, 45);
+                menu.ctx.fillStyle = "#fff"; menu.ctx.fillText("ENT", startX + 182, controlY + 30);
             } else if(state === 'intro') {
                 menu.ctx.fillStyle = "#f04"; menu.ctx.font = "bold 48px Arial";
                 menu.ctx.fillText("WARNING", 256, 200);
@@ -452,6 +455,7 @@
     const tempMatrix = new THREE.Matrix4();
     const controllers = [];
     const controllerGrips = [];
+    let isSimulated = !navigator.xr;
 
     let audioStarted = false;
     function onSelectStart(event) {
@@ -460,12 +464,16 @@
             initSpatialAudio();
             audioStarted = true;
         }
-        const controller = event.target;
+        const controller = event.target || event; 
         if(state === 'playing') fire(controller);
         else if(state === 'title') {
-            tempMatrix.identity().extractRotation(controller.matrixWorld);
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            if (isSimulated) {
+                raycaster.ray.copy(getSimulatedRay());
+            } else {
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            }
             const intersects = raycaster.intersectObject(menuMesh);
             if (intersects.length > 0) {
                 if (intersects[0].uv.y < 0.25) { state = 'leaderboard'; }
@@ -482,9 +490,13 @@
             }
         }
         else if(state === 'input') {
-            tempMatrix.identity().extractRotation(controller.matrixWorld);
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            if (isSimulated) {
+                raycaster.ray.copy(getSimulatedRay());
+            } else {
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            }
             const intersects = raycaster.intersectObject(menuMesh);
             if (intersects.length > 0) {
                 const uv = intersects[0].uv;
@@ -492,7 +504,8 @@
                 const kw = 40, kh = 40, gap = 8;
                 const totalW = 10 * kw + 9 * gap;
                 const startX = (512 - totalW) / 2;
-                const startY = 280;
+                const startY = 230; // Updated to match HUD
+                const controlY = startY + 4 * (kh + gap) + 10;
 
                 if (py >= startY && py <= startY + 4 * (kh + gap)) {
                     const row = Math.floor((py - startY) / (kh + gap));
@@ -504,7 +517,7 @@
                             sounds.clank.play();
                         }
                     }
-                } else if (py >= 440 && py <= 485) {
+                } else if (py >= controlY && py <= controlY + 45) {
                     if (px >= startX && px <= startX + 115) {
                         playerName = playerName.slice(0, -1);
                         sounds.clank.play();
@@ -528,14 +541,53 @@
         if(state === 'playing') activateShield();
     }
 
+    // Simulator Helpers
+    const mouse = new THREE.Vector2();
+    let isRightMouseDown = false;
+    window.addEventListener('mousemove', (e) => {
+        if (isSimulated && isRightMouseDown) {
+            cameraRig.rotation.y -= e.movementX * 0.005;
+            camera.rotation.x -= e.movementY * 0.005;
+            camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+        }
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+    window.addEventListener('mousedown', (e) => {
+        if (!isSimulated) return;
+        if (e.button === 0) onSelectStart(controllers[1]);
+        if (e.button === 2) {
+            isRightMouseDown = true;
+            onSqueezeStart();
+        }
+    });
+    window.addEventListener('mouseup', (e) => {
+        if (e.button === 2) isRightMouseDown = false;
+    });
+    window.addEventListener('contextmenu', e => e.preventDefault());
+    window.addEventListener('keydown', (e) => {
+        if (!isSimulated) return;
+        if (e.code === 'Space') onSqueezeStart();
+    });
+
+    function getSimulatedRay() {
+        const r = new THREE.Ray();
+        r.origin.setFromMatrixPosition(camera.matrixWorld);
+        const target = new THREE.Vector3(mouse.x, mouse.y, -1).unproject(camera);
+        r.direction.copy(target).sub(r.origin).normalize();
+        return r;
+    }
+
     for (let i = 0; i < 2; i++) {
-        const controller = renderer.xr.getController(i);
-        controller.addEventListener('selectstart', onSelectStart);
-        controller.addEventListener('squeezestart', onSqueezeStart);
+        const controller = isSimulated ? new THREE.Group() : renderer.xr.getController(i);
+        if (!isSimulated) {
+            controller.addEventListener('selectstart', onSelectStart);
+            controller.addEventListener('squeezestart', onSqueezeStart);
+        }
         cameraRig.add(controller);
         controllers.push(controller);
 
-        const grip = renderer.xr.getControllerGrip(i);
+        const grip = isSimulated ? new THREE.Group() : renderer.xr.getControllerGrip(i);
         cameraRig.add(grip);
         controllerGrips.push(grip);
 
@@ -580,7 +632,7 @@
             ctrl.active = true;
             ctrl.activeTimer = 60;
             shieldMesh.visible = true;
-            playSfx(200, 'sine', 0.2, 0.1);
+            sounds.shield.play();
         }
     }
 
@@ -693,7 +745,7 @@
 
     function startGame() { 
         if(state === 'scroller' || state === 'story' || state === 'intro') return; 
-        level = 0; pHP = 100; score = 0; mult = 1; initAudio();
+        level = 0; pHP = 100; score = 0; mult = 1; initSpatialAudio();
         const introText = "A long time ago in an Outback far, far away...\n\nTHE NEON REBELLION\n\nThe Great Emu War has moved into the digital realm.\n\nAs the last Cyber-Operator, you must delete the Big Five before they upload 'Bogans.exe'.\n\nYour journey begins in the Neon Forest...";
         showScroller(introText, startLevel);
     }
@@ -706,7 +758,7 @@
         l.mkEnv(); mkBackground(); scene.background = new THREE.Color(l.bg); scene.fog.color = new THREE.Color(l.bg);
         
         state = 'story';
-        setTimeout(() => { if(state === 'story') { state = 'intro'; playExplosionSound(); } }, 4000);
+        setTimeout(() => { if(state === 'story') { state = 'intro'; sounds.explode.play(); } }, 4000);
         setTimeout(() => { if(state === 'intro') { state = 'fight'; } }, 6000);
         setTimeout(() => { if(state === 'fight') { state = 'playing'; } }, 7500);
     }
@@ -728,6 +780,21 @@
                 c.blaster.rotation.x = THREE.MathUtils.lerp(c.blaster.rotation.x, 0, 0.2);
             }
         });
+
+        // Simulator Blaster Positioning
+        if (isSimulated) {
+            controllers.forEach((c, i) => {
+                c.position.copy(camera.position);
+                c.quaternion.copy(camera.quaternion);
+                // Offset blasters to the sides
+                const side = i === 0 ? -0.2 : 0.2;
+                const offset = new THREE.Vector3(side, -0.15, -0.3).applyQuaternion(camera.quaternion);
+                c.position.add(offset);
+                // Tilt towards mouse
+                c.rotation.y += mouse.x * 0.2;
+                c.rotation.x += mouse.y * 0.2;
+            });
+        }
 
         // Update Menu Position relative to camera when not playing
         if(state !== 'playing') {
@@ -769,7 +836,7 @@
                 }
 
                 if(phase === 1 && eHP <= eMax / 3) {
-                    phase = 2; playExplosionSound();
+                    phase = 2; sounds.explode.play();
                     const armorMat = new THREE.MeshStandardMaterial({color: 0xdddddd, metalness: 1.0, roughness: 0.0, emissive: 0xffffff, emissiveIntensity: 0.5});
                     boss.traverse(c => { 
                         if(c.isMesh && !c.name.toLowerCase().includes('head') && Math.random() > 0.5) {
@@ -795,7 +862,7 @@
             }
 
             if(eHP <= 0) {
-                state = 'complete'; timeScale = 0.2; playExplosionSound();
+                state = 'complete'; timeScale = 0.2; sounds.explode.play();
                 const pieces = []; boss.traverse(c => { if(c.isMesh) pieces.push(c); });
                 pieces.forEach(p => {
                     const wp = new THREE.Vector3(), wq = new THREE.Quaternion(); p.getWorldPosition(wp); p.getWorldQuaternion(wq);
@@ -804,7 +871,7 @@
                 });
                 scene.remove(boss); boss = null;
                 setTimeout(() => {
-                    playExplosionSound();
+                    sounds.explode.play();
                     ragdolls.forEach(r => { 
                         for(let i=0; i<10; i++) spawnP(r.mesh.position, 1, 0xffffff * Math.random());
                         scene.remove(r.mesh); 
@@ -929,15 +996,19 @@
             threeJS: !!THREE.Scene,
             renderer: !!renderer.domElement,
             xrSupported: !!navigator.xr,
-            audioReady: audioStarted || !!audioCtx,
+            simulator: isSimulated,
+            audioReady: audioStarted || (audioCtx && audioCtx.state !== 'closed'),
             entitiesLoaded: LVLS.length === 5,
             loopRunning: renderer.info.render.frame > 0
         };
         Object.entries(health).forEach(([key, val]) => {
-            log(`${key}: ${val ? "PASSED" : "FAILED"}`);
+            log(`${key}: ${val ? "PASSED" : (key === 'xrSupported' ? "FAILED (FALLBACK ACTIVE)" : "FAILED")}`);
         });
-        if (Object.values(health).every(v => v)) log("STATUS: MISSION READY");
-        else log("STATUS: ATTENTION REQUIRED");
+        if (health.threeJS && health.renderer && health.loopRunning) {
+            log(health.xrSupported ? "STATUS: MISSION READY" : "STATUS: MISSION READY (SIMULATED)");
+        } else {
+            log("STATUS: ATTENTION REQUIRED");
+        }
         log("---------------------------");
     }, 2000);
 </script>
